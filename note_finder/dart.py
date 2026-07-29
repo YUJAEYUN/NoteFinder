@@ -68,4 +68,8 @@ class DartClient:
                 text = target.read_text(encoding="utf-8", errors="replace")
                 match = re.search(r"<message>(.*?)</message>", text)
                 detail = {"message": match.group(1) if match else "invalid document response"}
+            # Do not permanently cache an API error body under a .zip filename.
+            # A corrected filing can become downloadable later, and the next run
+            # should retry it or fall back to the previous correction.
+            target.unlink(missing_ok=True)
             raise DartError(f"DART document error: {detail.get('message')}") from exc

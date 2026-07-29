@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from note_finder.pipeline import dart_url
+
+
 PROCESSED = ROOT / "data" / "processed" / "issued_note_2025-2026"
 SOURCE = PROCESSED / "final_dataset.json"
 OUTPUT = PROCESSED / "curated_final.json"
@@ -14,12 +19,13 @@ OUTPUT = PROCESSED / "curated_final.json"
 
 def detail(
     company: str,
-    amount_won: int,
+    amount_won: int | None,
     issuer: str,
     product: str,
     expression: str,
     basis: str = "원문 표",
     note: str = "",
+    evidence_type: str = "DIRECT",
 ) -> dict:
     return {
         "corp_name": company,
@@ -29,13 +35,14 @@ def detail(
         "expression": expression,
         "basis": basis,
         "note": note,
+        "evidence_type": evidence_type,
     }
 
 
 DETAILS = [
     detail("E1", 110_000_000_000, "공시 내 미표기", "발행어음",
            "발행어음 | 110,000,000 (단위: 천원)", "연결",
-           "연결재무제표의 현금및예치금 내역"),
+           "연결재무제표의 현금및예치금 내역", evidence_type="INDIRECT"),
     detail("HD현대마린솔루션", 30_000_000_000, "공시 내 미표기", "발행어음",
            "발행어음 | 원금 30,000 | 평가금액 30,000 (단위: 백만원)"),
     detail("LS증권", 110_000_000_000, "공시 내 미표기", "발행어음",
@@ -49,7 +56,8 @@ DETAILS = [
     detail("SK바이오사이언스", 10_000_000_000, "공시 내 미표기", "발행어음",
            "발행어음 | 당반기말 10,000,000 (단위: 천원)"),
     detail("SK케미칼", 9_928_751_000, "공시 내 미표기", "발행어음",
-           "단기금융상품 | 발행어음 | 9,928,751 (단위: 천원)", "연결"),
+           "단기금융상품 | 발행어음 | 9,928,751 (단위: 천원)", "연결",
+           evidence_type="INDIRECT"),
     detail("나노엔텍", 3_448_251_000, "공시 내 미표기", "발행어음",
            "발행어음 | 3,448,251 (단위: 천원)"),
     detail("뉴로핏", 5_000_000_000, "공시 내 미표기", "발행어음",
@@ -106,23 +114,24 @@ DETAILS = [
     detail("아이티아이즈", 1_007_073_445, "공시 내 미표기", "발행어음",
            "당기손익-공정가치측정금융자산 | 발행어음 | 1,007,073,445 (단위: 원)",
            "별도"),
-    detail("안랩", 95_000_000_000, "공시 내 미표기", "발행어음",
-           "단기투자자산 | 발행어음 | 당분기말 95,000,000 (단위: 천원)",
-           "별도", "연결 기준 금액은 97,500,000천원"),
+    detail("안랩", 97_500_000_000, "공시 내 미표기", "발행어음",
+           "단기투자자산 | 발행어음 | 당분기말 97,500,000 (단위: 천원, 연결)",
+           "연결"),
     detail("에스제이엠", 6_000_000_000, "KB증권", "KB증권 발행어음(스텝업)",
            "KB증권 발행어음(스텝업) | 6,000,000,000 (단위: 원)"),
     detail("에스제이엠", 2_000_000_000, "KB증권", "KB증권 발행어음",
            "KB증권 발행어음 | 2,000,000,000 (단위: 원)"),
     detail("에코프로에이치엔", 20_000_000_000, "공시 내 미표기", "발행어음",
            "발행어음 | 20,000 | 10개월 (단위: 백만원)"),
-    detail("엔시스", 1_000_000_000, "공시 내 미표기", "발행어음",
-           "당기손익-공정가치측정금융자산 | 발행어음 | 1,000,000 (단위: 천원)",
-           "별도", "연결 기준 금액은 1,600,539천원"),
+    detail("엔시스", 1_600_539_000, "공시 내 미표기", "발행어음(수시형)",
+           "발행어음(수시형) | 당분기말 1,600,539 (단위: 천원)",
+           "연결"),
     detail("옵티코어", 1_002_879_165, "공시 내 미표기", "발행어음",
            "유동항목 | 발행어음 | 1,002,879,165 (단위: 원)", "별도"),
     detail("우리로", 9_463_000_000, "공시 내 미표기", "MMT(발행어음 운용)",
            "MMT상품 9,463백만원 / 1일 만기 발행어음 매매에 운용",
-           note="직접 발행어음 계정이 아닌 MMT를 통한 간접 운용"),
+           note="직접 발행어음 계정이 아닌 MMT를 통한 간접 운용",
+           evidence_type="INDIRECT"),
     detail("일신레져", 2_000_000_000, "공시 내 미표기", "발행어음",
            "단기금융상품 | 발행어음 | 당기 2,000,000,000 (단위: 원)"),
     detail("제이씨현시스템", 11_000_000_000, "공시 내 미표기", "발행어음",
@@ -152,7 +161,84 @@ DETAILS = [
     detail("화승엔터프라이즈", 10_000_000_000, "공시 내 미표기", "발행어음",
            "발행어음 | 10,000 | 수시 입출금 (단위: 백만원)"),
     detail("화승인더스트리", 10_000_000_000, "공시 내 미표기", "발행어음",
-           "발행어음 | 10,000 | 수시 입출금 (단위: 백만원)"),
+           "발행어음 | 10,000 | 수시 입출금 (단위: 백만원)",
+           evidence_type="INDIRECT"),
+]
+
+# Browser review and table-level rechecks added these companies after the first
+# 49-company direct-holding pass. Keep them as reviewed evidence rather than
+# teaching the automatic extractor that every trust/aggregate mention is final.
+DETAILS += [
+    detail("경동제약", 8_999_388_000, "공시 내 미표기", "채권·CP/RP·발행어음 등",
+           "채권·CP/RP·발행어음 등 | 8,999,388천원",
+           evidence_type="AGGREGATE"),
+    detail("NH투자증권", 646_220_000_000, "공시 내 미표기", "신탁계정 발행어음",
+           "금전신탁 자금운용현황 - 발행어음 | 금전신탁합계 646,220백만원",
+           evidence_type="TRUST"),
+    detail("빅솔론", 4_000_000_000, "공시 내 미표기", "기타단기금융상품",
+           "기타단기금융상품 4,000,000,000원 | 중금채·발행어음 등으로 구성",
+           evidence_type="AGGREGATE"),
+    detail("에스디바이오센서", 80_000_000_000, "공시 내 미표기", "금융상품",
+           "금융상품 | 발행어음 등 | 80,000,000천원",
+           evidence_type="AGGREGATE"),
+    detail("에이루트", 2_273_279_000, "공시 내 미표기", "MMT",
+           "MMT 2,273,279천원 | 구성자산은 발행어음과 RP",
+           evidence_type="INDIRECT"),
+    detail("오성첨단소재", 17_999_999_000, "공시 내 미표기", "발행어음 외 3건",
+           "발행어음 외 3건 | 4,999,999 + 7,000,000 + 6,000,000천원",
+           evidence_type="AGGREGATE"),
+    detail("한국지주", 8_891_647_000, "NH투자증권(주) 외", "발행어음 등",
+           "발행어음 등 | NH투자증권(주) 외 | 8,891,647천원",
+           evidence_type="AGGREGATE"),
+    detail("DB증권", 12_196_547_000, "공시 내 미표기", "신탁계정 발행어음",
+           "발행어음, 신탁계정 | 12,196,547천원", evidence_type="TRUST"),
+    detail("교보증권", 10_000_000_000, "공시 내 미표기", "신탁계정 발행어음",
+           "신탁계정 매입어음 - 발행어음 | 10,000백만원", evidence_type="TRUST"),
+    detail("대신증권", 318_187_000_000, "공시 내 미표기", "신탁계정 발행어음",
+           "신탁계정 매입어음 - 발행어음 | 318,187백만원", evidence_type="TRUST"),
+    detail("미래에셋증권", 73_726_553_318, "공시 내 미표기", "신탁계정 발행어음",
+           "신탁계정 매입어음 - 발행어음 | 73,726,553,318원", evidence_type="TRUST"),
+    detail("삼성증권", 250_000_000_000, "공시 내 미표기", "신탁계정 발행어음",
+           "신탁계정 매입어음 - 발행어음 | 250,000백만원", evidence_type="TRUST"),
+    detail("아이비케이투자증권", 167_413_904_532, "공시 내 미표기",
+           "신탁계정 발행어음",
+           "신탁계정 매입어음 - 발행어음 | 167,413,904,532원",
+           evidence_type="TRUST"),
+    detail("신한투자증권", 1_176_715_312_586, "공시 내 미표기",
+           "신탁계정 발행어음",
+           "신탁계정 매입어음 - 발행어음 | 1,176,715,312,586원",
+           evidence_type="TRUST"),
+    detail("현대차증권", 130_000_000_000, "공시 내 미표기", "신탁계정 발행어음",
+           "신탁계정 매입어음 - 발행어음 | 130,000,000,000원",
+           evidence_type="TRUST"),
+    detail("하나증권", 264_670_000_000, "공시 내 미표기", "신탁계정 발행어음",
+           "신탁계정 매입어음 - 발행어음 | 264,670백만원", evidence_type="TRUST"),
+    detail("유진증권", None, "공시 내 미표기", "신탁계정 발행어음",
+           "신탁계정 발행어음이자 52백만원 | 잔액은 공시 미표기",
+           evidence_type="TRUST"),
+    detail("티비씨", None, "공시 내 미표기", "발행어음 운용",
+           "유동자산을 금융기관 발행 예금·금융채·발행어음 등에 운용 | 단독금액 미표기",
+           evidence_type="EXISTENCE"),
+    detail("한국금융지주", 2_660_753_000_000, "공시 내 미표기",
+           "한국투자증권 신탁계정 발행어음",
+           "한국투자증권 신탁계정 발행어음 | 2,660,753백만원 | 연결·간접 반영",
+           evidence_type="INDIRECT"),
+    detail("한국투자증권", 2_660_753_000_000, "공시 내 미표기",
+           "신탁계정 발행어음",
+           "금전신탁 자금운용현황 - 발행어음 | 2,660,753백만원",
+           evidence_type="TRUST"),
+    detail("한화", 177_872_000_000, "공시 내 미표기",
+           "한화투자증권 신탁계정 발행어음",
+           "한화투자증권 신탁계정 발행어음 | 177,872백만원 | 연결·간접 반영",
+           evidence_type="INDIRECT"),
+    detail("한화생명", 177_872_000_000, "공시 내 미표기",
+           "한화투자증권 신탁계정 발행어음",
+           "한화투자증권 신탁계정 발행어음 | 177,872백만원 | 연결·간접 반영",
+           evidence_type="INDIRECT"),
+    detail("한화투자증권", 177_872_000_000, "공시 내 미표기",
+           "신탁계정 발행어음",
+           "금전신탁 자금운용현황 - 발행어음 | 177,872백만원",
+           evidence_type="TRUST"),
 ]
 
 ZERO_COMPANIES = {"네오크레마", "비비씨", "동서", "메카로", "알에프텍"}
@@ -193,7 +279,7 @@ def main() -> None:
             "rcept_dt": filing["rcept_dt"],
             "report_nm": filing["report_nm"],
             "report_period": period_from_report(filing["report_nm"]),
-            "dart_url": f'https://dart.fss.or.kr/dsaf001/main.do?rcpNo={filing["rcept_no"]}',
+            "dart_url": dart_url(filing["rcept_no"]),
         })
 
     company_rows = []
@@ -210,11 +296,16 @@ def main() -> None:
             "report_period": period_from_report(filing["report_nm"]),
             "report_nm": filing["report_nm"],
             "rcept_no": filing["rcept_no"],
-            "amount_won": sum(row["amount_won"] for row in rows),
+            "amount_won": (
+                sum(row["amount_won"] for row in rows if row["amount_won"] is not None)
+                if any(row["amount_won"] is not None for row in rows)
+                else None
+            ),
             "issuer": ", ".join(issuers),
             "product": " / ".join(products),
             "expression": " || ".join(row["expression"] for row in rows),
             "basis": ", ".join(sorted({row["basis"] for row in rows})),
+            "evidence_type": ", ".join(sorted({row["evidence_type"] for row in rows})),
             "status": "보유 확인",
             "note": " / ".join(row["note"] for row in rows if row["note"]),
             "dart_url": rows[0]["dart_url"],
@@ -251,7 +342,7 @@ def main() -> None:
             "status": status,
             "reason": reason,
             "expression": expression[:800],
-            "dart_url": f'https://dart.fss.or.kr/dsaf001/main.do?rcpNo={filing["rcept_no"]}',
+            "dart_url": dart_url(filing["rcept_no"]),
         })
 
     audit = {
@@ -262,7 +353,9 @@ def main() -> None:
         "unclassified_companies": sorted(
             set(filings) - holding_names - {row["corp_name"] for row in excluded}
         ),
-        "simple_total_won": sum(row["amount_won"] for row in company_rows),
+        "simple_total_won": sum(
+            row["amount_won"] for row in company_rows if row["amount_won"] is not None
+        ),
     }
     OUTPUT.write_text(json.dumps({
         "audit": audit,
