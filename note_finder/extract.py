@@ -5,12 +5,17 @@ from dataclasses import dataclass, asdict
 
 from bs4 import BeautifulSoup
 
-BROKERS = {
+BROKER_ALIASES = {
     "NH투자증권": re.compile(r"(?:NH|엔에이치)\s*투자증권"),
     "한국투자증권": re.compile(r"(?:한국|한투)\s*투자증권"),
     "KB증권": re.compile(r"(?:KB|케이비)\s*증권"),
     "미래에셋증권": re.compile(r"미래에셋\s*(?:대우|증권)"),
 }
+# Do not treat the four short-term-finance licensees as an exhaustive universe.
+# Disclosures can name a distributor, counterparty, former corporate name, or an
+# overseas securities firm.  This deliberately broad pattern keeps every
+# company-like token ending in 증권; reviewers can normalize new names later.
+BROKER_NAME = re.compile(r"(?<![가-힣A-Za-z0-9])(?:주식회사|㈜|\(주\))?\s*([가-힣A-Za-z&]{2,24}(?:투자)?증권)")
 NOISE = ("가입대상", "인가 확대", "법규상의 규제", "불특정금전신탁", "상품설명")
 AMOUNT = re.compile(r"(?<![\d.])(-?\d{1,3}(?:,\d{3})+|-?\d+)\s*(백만원|천원|억원|원)?")
 
@@ -35,6 +40,19 @@ def _to_thousand(value: int, unit: str) -> int | None:
             "원": round(value / 1000)}.get(unit)
 
 
+def find_brokers(context: str) -> list[str]:
+    """Return normalized known aliases plus every explicit *증권 company name."""
+    found = [canonical for canonical, pattern in BROKER_ALIASES.items() if pattern.search(context)]
+    for candidate in BROKER_NAME.findall(context):
+        canonical = next(
+            (name for name, pattern in BROKER_ALIASES.items() if pattern.fullmatch(candidate)),
+            candidate,
+        )
+        if canonical not in found:
+            found.append(canonical)
+    return found
+
+
 def extract_document(name: str, body: bytes, keyword: str = "발행어음") -> list[Evidence]:
     soup = BeautifulSoup(body, "html.parser")
     # Table rows preserve the strongest relationship between label, counterparty and value.
@@ -46,7 +64,8 @@ def extract_document(name: str, body: bytes, keyword: str = "발행어음") -> l
         if keyword not in context or context in seen:
             continue
         seen.add(context)
-        broker = next((canonical for canonical, pattern in BROKERS.items() if pattern.search(context)), "미정")
+        brokers = find_brokers(context)
+        broker = ", ".join(brokers) if brokers else "미정"
         amounts = [(m.group(1), m.group(2) or "") for m in AMOUNT.finditer(context)]
         explicit_amounts = [(v, u) for v, u in amounts if u or "," in v]
         aggregate = bool(re.search(r"중금채|기타금융상품|등으로 구성|등", context))
@@ -67,4 +86,3 @@ def extract_document(name: str, body: bytes, keyword: str = "발행어음") -> l
         else:
             results.append(Evidence(name, context, broker, "", "", None, kind, reason))
     return results
-

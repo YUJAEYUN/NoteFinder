@@ -24,8 +24,9 @@ def deduplicate(filings: list[dict]) -> tuple[list[dict], list[dict]]:
     return list(kept.values()), removed
 
 
-def run(client: DartClient, begin: str, end: str, output: Path, keyword: str = "발행어음") -> dict:
-    raw = list(client.iter_filings(begin, end))
+def run(client: DartClient, begin: str, end: str, output: Path, keyword: str = "발행어음",
+        candidate_filings: list[dict] | None = None) -> dict:
+    raw = candidate_filings if candidate_filings is not None else list(client.iter_filings(begin, end))
     filings, dedup_log = deduplicate(raw)
     rows = []
     for filing in filings:
@@ -34,7 +35,8 @@ def run(client: DartClient, begin: str, end: str, output: Path, keyword: str = "
                 rows.append({**{k: filing.get(k, "") for k in FIELDS[:5]}, **evidence.dict()})
     write_excel(output, rows, dedup_log)
     audit = output.with_suffix(".audit.json")
-    audit.write_text(json.dumps({"query": {"begin": begin, "end": end, "keyword": keyword},
+    audit.write_text(json.dumps({"query": {"begin": begin, "end": end, "keyword": keyword,
+                                           "source": "candidate_file" if candidate_filings is not None else "opendart_list"},
                                  "filings_seen": len(raw), "filings_scanned": len(filings),
                                  "evidence_rows": len(rows), "dedup_log": dedup_log},
                                 ensure_ascii=False, indent=2), encoding="utf-8")
@@ -59,4 +61,3 @@ def write_excel(path: Path, rows: list[dict], dedup_log: list[dict]) -> None:
         ws.append([row["dropped"], row["kept"], row["key"]])
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
-
