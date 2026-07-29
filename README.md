@@ -116,13 +116,32 @@ export OPENDART_API_KEY="<your-api-key>"
 
 이미 채팅이나 로그에 노출된 키는 재발급하고 기존 키를 폐기하는 것이 안전합니다.
 
+## 폴더 구조
+
+```text
+NoteFinder/
+├── note_finder/          # 핵심 수집·추출·분류 코드
+├── tests/                # 회귀 테스트
+├── tools/                # 최종 데이터 생성·검증 보조 스크립트
+├── data/
+│   ├── candidates/       # DART 검색 후보 CSV
+│   ├── raw/              # OpenDART 원문 ZIP 캐시
+│   └── processed/        # 검증·가공 중간 데이터
+└── outputs/
+    ├── final/            # 사용자에게 전달할 최종 결과
+    └── archive/          # 이전 시도와 QA 자료
+```
+
+`data/`와 `outputs/`는 대용량 원문, 중간 산출물 및 엑셀 파일이므로 Git에서 제외합니다.
+GitHub에는 실행 코드, 테스트와 문서만 커밋합니다.
+
 ## 실행
 
 ### DART 검색 후보만 분석
 
 ```bash
 python main.py \
-  --candidates dart_search_candidates.csv \
+  --candidates data/candidates/dart_search_candidates.csv \
   --keyword "발행어음" \
   --output issued_note_report.xlsx
 ```

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import time
 import zipfile
 from dataclasses import dataclass
@@ -64,6 +65,7 @@ class DartClient:
             try:
                 detail = json.loads(target.read_text())
             except (UnicodeDecodeError, json.JSONDecodeError):
-                detail = {"message": "invalid document response"}
+                text = target.read_text(encoding="utf-8", errors="replace")
+                match = re.search(r"<message>(.*?)</message>", text)
+                detail = {"message": match.group(1) if match else "invalid document response"}
             raise DartError(f"DART document error: {detail.get('message')}") from exc
-

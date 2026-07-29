@@ -23,6 +23,17 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual([row.classification for row in rows], ["A", "B"])
         self.assertEqual(rows[0].amount_thousand_won, 11200)
 
+    def test_confirms_holding_when_issuer_is_not_disclosed(self):
+        html = "<table><tr><td>단기금융상품</td><td>발행어음</td><td>60,000</td></tr></table>"
+        row = extract_document("sample.xml", html.encode())[0]
+        self.assertEqual(row.classification, "A")
+        self.assertEqual(row.broker, "공시 내 미표기")
+
+    def test_excludes_unissued_note_false_positive(self):
+        html = "<p>은행으로부터 교부받은 미발행어음 26매가 있습니다.</p>"
+        row = extract_document("sample.xml", html.encode())[0]
+        self.assertEqual(row.classification, "EXCLUDED")
+
     def test_keeps_latest_correction_and_logs_old_receipt(self):
         filings = [{"corp_code": "1", "report_nm": "사업보고서 (2025.12)", "rcept_dt": "20260301", "rcept_no": "old"},
                    {"corp_code": "1", "report_nm": "[기재정정] 사업보고서 (2025.12)", "rcept_dt": "20260401", "rcept_no": "new"}]
